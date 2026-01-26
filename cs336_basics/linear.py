@@ -104,4 +104,4 @@ class RotaryPositionalEmbedding(nn.Module):
         
         x_rotated = torch.cat((-x2, x1), dim=-1)
         
-        return (x*cos) +(x_rotated*sin)
+        return (x*cos) +(x_rotated*sin) 

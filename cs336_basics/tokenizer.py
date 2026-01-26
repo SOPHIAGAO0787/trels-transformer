@@ -109,7 +109,7 @@ class BPETokenizer:
     def encode_iterable(self,iterable: Iterable[str]) -> Iterator[int]:
         for text in iterable:
             yield from self.encode(text)
-            
+             
     def decode(self, ids:list[int]) -> str:
         part_bytes = []
         for idx in ids:
