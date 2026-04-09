@@ -83,7 +83,7 @@ class SwiGlu(nn.Module):
 
 class RotaryPositionalEmbedding(nn.Module):
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
-        super().__init__
+        super().__init__()
         self.d_k = d_k
         inv_freq = 1 / theta**(torch.arange(0, d_k, 2).float()/d_k)
         t = torch.arange(max_seq_len).float()
@@ -105,3 +105,23 @@ class RotaryPositionalEmbedding(nn.Module):
         x_rotated = torch.cat((-x2, x1), dim=-1)
         
         return (x*cos) +(x_rotated*sin) 
+def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
+    max_val = x.max(dim=dim, keepdim=True)[0]
+    x_exp=torch.exp(x - max_val) 
+    partition = x_exp.sum(dim,keepdim=True)
+    return x_exp / partition
+
+def scaled_dot_product_attention(q:torch.Tensor, k: torch.Tensor, v:torch.Tensor, mask = None) -> torch.Tensor:
+    dk = k.size(-1)
+    
+    #get the score for each position
+    scores = torch.matmul(q, k.transpose(-2, -1))/math.sqrt(dk)
+    
+    #apply mask if provided
+    if mask is not None:
+        scores = scores.masked_fill(mask == False, float('-inf'))
+    
+    attn_weights = softmax(scores, dim=-1)
+    output = torch.matmul(attn_weights, v)
+    return output
+

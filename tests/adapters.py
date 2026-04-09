@@ -83,7 +83,17 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    from cs336_basics.linear import SwiGlu
+    
+    model = SwiGlu(d_model, d_ff)
+    with torch.no_grad():
+        model.w1.weight.copy_(w1_weight)
+        model.w2.weight.copy_(w2_weight)
+        model.w3.weight.copy_(w3_weight)
+    
+    # forward
+    model.eval()
+    return model(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -104,7 +114,9 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    from cs336_basics.linear import scaled_dot_product_attention
+    
+    return scaled_dot_product_attention(Q,K,V,mask)
 
 
 def run_multihead_self_attention(
@@ -138,7 +150,30 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    from cs336_basics.linear import scaled_dot_product_attention
+
+    # single matmul projects all heads at once (no RoPE)
+    Q = in_features @ q_proj_weight.T   # (... seq_len, d_k)
+    K = in_features @ k_proj_weight.T
+    V = in_features @ v_proj_weight.T
+
+    *leading, seq_len, _ = in_features.shape
+    d_head   = q_proj_weight.shape[0] // num_heads
+    d_v_head = v_proj_weight.shape[0] // num_heads
+
+    # split & transpose: (... num_heads, seq_len, d_head)
+    Q = Q.view(*leading, seq_len, num_heads, d_head).transpose(-3, -2)
+    K = K.view(*leading, seq_len, num_heads, d_head).transpose(-3, -2)
+    V = V.view(*leading, seq_len, num_heads, d_v_head).transpose(-3, -2)
+
+    mask = torch.tril(torch.ones(seq_len, seq_len, device=in_features.device, dtype=torch.bool))
+
+    attn_output = scaled_dot_product_attention(Q, K, V, mask=mask)
+
+    # merge heads: (... seq_len, num_heads * d_v_head)
+    attn_output = attn_output.transpose(-3, -2).contiguous().view(*leading, seq_len, -1)
+
+    return attn_output @ o_proj_weight.T
 
 
 def run_multihead_self_attention_with_rope(
@@ -392,8 +427,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
-
+    return torch.nn.functional.silu(in_features)
 
 def run_get_batch(
     dataset: npt.NDArray, batch_size: int, context_length: int, device: str
@@ -431,7 +465,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    from cs336_basics.linear.py import run_softmax as my_softmax
+    return my_softmax(in_features, dim)
 
 
 def run_cross_entropy(

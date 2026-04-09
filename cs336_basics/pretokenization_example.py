@@ -16,7 +16,7 @@ def find_chunk_boundaries(
     # Get total file size in bytes
     file.seek(0, os.SEEK_END)
     file_size = file.tell()
-    file.seek(0)
+    file.seek(0) 
 
     chunk_size = file_size // desired_num_chunks
 
