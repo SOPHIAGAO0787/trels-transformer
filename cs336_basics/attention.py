@@ -10,11 +10,11 @@ class MultiHeadSelfAttention(nn.Module):
         self.d_k = d_model // num_heads #dimension per head
         
         #Q, K, V projections for all heads
-        self.W_q = Linear(d_model, d_model, device=device, dtype=dtype)
-        self.W_k = Linear(d_model, d_model, device=device, dtype=dtype)
-        self.W_v = Linear(d_model, d_model, device=device, dtype=dtype)
-        
-        self.W_o = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.q_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.k_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.v_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+
+        self.output_proj = Linear(d_model, d_model, device=device, dtype=dtype)
         
         #Rope
         if use_rope:
@@ -32,9 +32,9 @@ class MultiHeadSelfAttention(nn.Module):
         """
         batch_size, seq_len, _ = x.shape
         #Project to Q,K,V
-        Q = self.W_q(x) #(batch_size, seq_len, d_model)
-        K = self.W_k(x)
-        V = self.W_v(x)
+        Q = self.q_proj(x) #(batch_size, seq_len, d_model)
+        K = self.k_proj(x)
+        V = self.v_proj(x)
         
         #reshape for multi-head: split d_model into (num_heads, d_k)
         Q = Q.view(batch_size, seq_len, self.num_heads, self.d_k)
@@ -59,5 +59,5 @@ class MultiHeadSelfAttention(nn.Module):
         #merge heads back: (batch_size, seq_len, d_models)
         attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
         
-        return self.W_o(attn_output)
+        return self.output_proj(attn_output)
     
