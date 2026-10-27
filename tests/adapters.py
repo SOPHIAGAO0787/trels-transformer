@@ -308,7 +308,16 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    from cs336_basics.transformerBlock import TransformerBlock
+
+    block = TransformerBlock(d_model, num_heads, d_ff, theta=theta, max_seq_len=max_seq_len)
+    block.load_state_dict(weights)
+    block.eval()
+
+    seq_len = in_features.shape[1]
+    token_positions = torch.arange(seq_len, device=in_features.device)
+    with torch.no_grad():
+        return block(in_features, token_positions)
 
 
 def run_transformer_lm(
@@ -390,7 +399,22 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.model import TransformerLM
+
+    model = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+    )
+    model.load_state_dict(weights)
+    model.eval()
+
+    with torch.no_grad():
+        return model(in_indices)
 
 
 def run_rmsnorm(
@@ -429,6 +453,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
     """
     return torch.nn.functional.silu(in_features)
 
+from cs336_basics.data_loader import data_loading
 def run_get_batch(
     dataset: npt.NDArray, batch_size: int, context_length: int, device: str
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -449,7 +474,8 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    
+    return data_loading(dataset, batch_size, context_length, device)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -484,7 +510,12 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    M = torch.max(inputs, dim=-1, keepdim=True).values
+    inputs = inputs - M
+    correct_logits = inputs[range(len(targets)), targets]
+    logsumexp = torch.log(torch.sum(torch.exp(inputs), dim=-1))
+    loss = -correct_logits + logsumexp
+    return loss.mean()
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -496,7 +527,18 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    grads = [p.grad for p in parameters if p.grad is not None]
+    
+    if len(grads) == 0:
+        return
+    
+    total_norm = torch.sqrt(sum(torch.norm(g, p=2) ** 2 for g in grads))
+    
+    if total_norm > max_l2_norm:
+        scale_factor = max_l2_norm / (total_norm + 1e-6)
+        
+        for g in grads:
+            g.mul_(scale_factor)
 
 
 def get_adamw_cls() -> Any:
@@ -505,7 +547,7 @@ def get_adamw_cls() -> Any:
     """
     raise NotImplementedError
 
-
+import math
 def run_get_lr_cosine_schedule(
     it: int,
     max_learning_rate: float,
@@ -531,7 +573,16 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    if it < warmup_iters:
+        return (it / warmup_iters) * max_learning_rate
+
+    if it > cosine_cycle_iters:
+        return min_learning_rate
+
+    progress = (it - warmup_iters) / (cosine_cycle_iters - warmup_iters)
+    coeff = 0.5 * (1.0 + math.cos(math.pi * progress))
+    
+    return min_learning_rate + coeff * (max_learning_rate - min_learning_rate)
 
 
 def run_save_checkpoint(
@@ -594,7 +645,8 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    from cs336_basics.tokenizer import BPETokenizer
+    return BPETokenizer(vocab, merges, special_tokens)
 
 
 def run_train_bpe(
@@ -624,4 +676,19 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    from cs336_basics.tokenizer import BPETokenizer
+
+    # Reserve vocab slots for special tokens
+    effective_vocab_size = vocab_size - len(special_tokens)
+    # Parallelizes pre-tokenization across processes, chunking the file at special-token
+    # boundaries so no chunk (and no pretoken) straddles a document boundary.
+    vocab, merges = BPETokenizer.train_from_file(input_path, effective_vocab_size, special_tokens)
+
+    # Append special tokens to vocab after the BPE entries
+    if special_tokens:
+        curr_id = max(vocab.keys()) + 1
+        for st in special_tokens:
+            vocab[curr_id] = st.encode("utf-8")
+            curr_id += 1
+
+    return vocab, merges
